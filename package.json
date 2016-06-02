@@ -1,0 +1,13 @@
+{
+  "name": "language-machine",
+  "version": "1.0.0",
+  "description": "An algorithm for use in machine learning language recognition.",
+  "main": "src.js",
+  "repository": "",
+  "author": "Isaac Dozier <isaactdozier@gmail.com>",
+  "dependencies": {
+    "async": "~0.2.8",
+    "express": "~3.2.4",
+    "socket.io": "~0.9.14"
+  }
+}
