@@ -5,9 +5,11 @@ This algorithm could be used to build a list of word string combinations for a b
 #### Examples:
 
 word -> apple
+
 string combos -> [app, ap, le, ple, ... ]
 
 word -> house
+
 string combos -> [ho, se, ous, ... ]
 
 ##### data.txt file
