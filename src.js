@@ -3,128 +3,226 @@
 //    Author: Isaac Dozier
 //    Email: isaactdozier@gmail.com
 //
-//    This program is free software: you can redistribute it and/or modify
-//    it under the terms of the GNU General Public License as published by
-//    the Free Software Foundation, either version 3 of the License, or
-//    (at your option) any later version.
-//
-//    This program is distributed in the hope that it will be useful,
-//    but WITHOUT ANY WARRANTY; without even the implied warranty of
-//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//    GNU General Public License for more details.
-//
-//    You should have received a copy of the GNU General Public License
-//    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-//
-//
 
 const fs  = require('fs');
 
+const alphaConst = 'bcdfghjklmnpqrstvwxz'.split('');
+const alphaVowel = 'aeiouy'.split('');
+
 //read and write files
-const dataFile   = 'data.txt', 
-      wordsFile  = 'words.txt',
+const dataFile          = 'data.txt', 
+      dataHistory       = 'history.txt',
+      englishWordsFile  = 'words.txt',
       
-      //for testing purposes
-      //simply create an empty file named 'testWords.txt' 
-      //and make a list of words you would like to test.
+      //testing purposes--
+      //create an empty .txt file named 'testWords' 
+      //make a list of words you would like to test.
+      //
+      //  example:
+      //    house
+      //    furnace
+      //    bounce
+      //    [etc]...
+      //
       //ONE word per line only (current version | v1.0.0)
       testWordsFile = 'testWords.txt';
 
-//read word-list of test-words-list 
-//for machine learning or testing algorithm accuracy       
-var words = fs.readFileSync(testWordsFile,'utf8').toLowerCase().toString().split('\n');
+//read wordsFile or testWordsFile and convert to array   
+var readWords = wordlistToArray(fs.readFileSync(testWordsFile,'utf8'));
 
-//call to learn language
-function learn(count){
+//read current data.txt, history.txt files
+var data = fs.readFileSync(dataFile, 'utf8');
+var history = fs.readFileSync(dataHistory, 'utf8');
+
+//clean data.txt file stream of seperators
+var cleanData = data.replace(/\r\n/g,'\n').split('\n');
+
+//assume <language>
+var call   = true,
+    likely = 100,
+    
+    //decision base factors
+    rBase = data.length * 0.05,
+    sBase = data.length * 0.03; 
+
+var build   = new Object();
+var trail   = new Object();
+var section = new Object();
+
+function alterData(here){
+  cleanData.splice(here - 1, 2);
+  cleanData.splice(here, 0, cleanData[here] + '\r\n' + cleanData[here - 1]);
+  return cleanData;
+}
+
+var isIt = function(score){
+  return score > sBase;
+}
+
+readWords.map(function(t,i){
+  var word       = t.replace('.', '');
+  var findPeriod = word.lastIndexOf('.') > 0;
   
-  //read current data.txt file
-  fs.readFile(dataFile, 'utf8', function(error, data) {
-    
-    //clean data.txt file stream of \n \r and other seperators
-    var newData = data.replace(/\r\n/g,'\n').split('\n');
-    
-    //loop data.txt stream
-    for(var i in newData){
-      
-      //look for last word or other funky stuff
-      //define flip and position parameters
-      var check    = words[count] !== undefined;
-      var noticed  = check ? words[count].indexOf(newData[i]) > -1 : false;
-      var notFirst = i > 0;
-      var flipWords, movePosition;
-      
-      //only if we find a match
-      //AND
-      //it's not the first in the array
-      //execute word flip
-      if(noticed && notFirst){
-        flipWords = newData[i]+'\r\n'+newData[i-1];
-        movePosition = i - 1;
-        newData.splice(i-1,2);
-        newData.splice(movePosition,0,flipWords)
-      }
+  //WORD
+  build.word  = word;
+  
+  //DNA
+  build.dna = cleanData.filter(function(str,piece){
+    return build.word.includes(str) && i < rBase;
+  },cleanData);
+  
+  //STAGE ONE
+  //use these for stage one checks
+  var isLength = build.word.length > 2;
+  var isEqual  = build.dna.indexOf(word) > 0;
+      //build falsy object
+      build.stageOne = isEqual && isLength;
+  
+  //SCORE
+  build.score = build.dna.map(function(str){
+    return cleanData.indexOf(str);
+  });
+  
+  //SCORE 
+  if(build.score.length > 0){
+    build.scoreAverage = addArray(build.score) / build.score.length;
+  } else {
+    build.scoreAverage = Array();
+  }
+  
+  //CONST
+  build.const = alphaConst.filter(function(str){
+    return build.dna.toString().includes(str);
+  });
+  
+  //VOWEL
+  build.vowel = alphaVowel.filter(function(str){
+    return build.dna.toString().includes(str);
+  });
+  
+  //evaluate trail of words and split into sections
+  //to be used in follow section seperator
+  if(trail.gather == undefined){
+    trail.gather = build.word;
+  } else {
+    trail.gather = trail.gather.concat(' ' + t);
+  }
+  
+  //section seperator
+  //seperates according to punctuation
+  if(findPeriod || readWords.length === i+1){
+    if(section.evaluate == undefined){
+      section.evaluate = trail.gather;
+    } else {
+      section.evaluate = section.evaluate.concat('\r\n' + trail.gather);
     }
     
-    //write changes to data.tx file
-    fs.writeFile(dataFile, newData.join('\n'), (err) => {
-      if (err) {throw err;}
-      
-      //checking for end of words.txt or testWords.txt file
-      if(words.length > count){
-        
-        //for humans to read
-        console.log(count+'::'+words[count]);
-        
-        //clear stack before moving on to next cycle
-        process.nextTick(function(){
-          learn(count+1);
-        });
-      }
-    });
+    //clear section gathering
+    //for next sentence
+    delete trail.gather;
+  }
+  
+  build.recognized = build.scoreAverage < sBase;
+  
+  cleanData.map(function(str){
+    if(build.word.includes(str)){
+      alterData(cleanData.indexOf(str));
+    }
+  })
+    
+  //for the humans
+  console.log(build);
+});
+
+//
+//STRICT --- DO NOT EDIT OR REMOVE
+//clear stack before moving on to next cycle
+//
+  //
+  //write changes to: data.txt
+  //                  history.txt
+  
+process.nextTick(function(){
+  fs.writeFileSync(dataFile, cleanData.join('\n'),'utf8');
+  fs.writeFileSync(dataHistory, section.evaluate + '\r\n' + history,'utf8');
+  
+  delete section.evaluate
+});
+//
+//END STRICT
+//
+
+//helper functions
+function removeVowelArr(str){;
+  return str.split('').filter(function(l){
+    return alphaVowel.indexOf(l) > -1;
   });
 }
 
-learn(0);
-
-
-//call to build data for .txt file
-//this function has been left here
-//for building customized data sets
-function vData(){
-  var cns = 'bcdfghjklmnpqrstvwxz'.split('');
-  var vls = 'aeiouy'.split('');
-  var a   = [];
-
-  //start the engine
-  for(var vi=0;vi<vls.length;vi++){
-    for(var ci=0;ci<cns.length;ci++){
-      for(var cii=0;cii<cns.length;cii++){
-        
-        // Vowel - Const - Const
-        a = a.concat(vls[vi] + cns[ci] + cns[cii]);
-        
-        // Const - Vowel - Const
-        a = a.concat(cns[ci] + vls[vi] + cns[cii]);
-        
-        // Const - Const - Vowel
-        a = a.concat(cns[ci] + cns[cii]+ vls[vi]);
-        
-      }
-      
-      // Const - Vowel
-      a = a.concat(cns[ci] + vls[vi]);
-      
-      // Vowel - Const
-      a = a.concat(vls[vi] + cns[ci]);
-      
-    }
-    for(var vii=0;vii<vls.length;vii++){
-      
-      // Vowel - Vowel
-      a = a.concat(vls[vi]  + vls[vii]);
-      
-    }
-  }
-
-  return a; 
+function wordlistToArray(data){
+  
+  //trim whitespace line-by-line
+  data = data.split('\n').map(function(line){
+    return line.trim();
+  }).join('\n');
+  
+  //seperate words line-by-line
+  data = data.replace(/ /g,'\n');
+  
+  //return data as array
+  return data.toLowerCase().toString().split('\n');
 }
+
+function addArray(arr){
+  var t = 0;
+  arr.map(function(n){
+    t += n;
+  })
+  return t;
+}
+
+
+//loop data.txt stream
+/*
+for(var i in dna){
+  
+  //basic variables for searching
+  var len = cleanData[i].length;
+  
+  //look for last word or other funky stuff
+  var check    = words[count] !== undefined;
+  var noticed  = check ? words[count].indexOf(cleanData[i]) > -1 : false;
+  
+  //define new pair and position parameter
+  var newPair, movePosition;
+  
+  //only if we find a match
+  //AND
+  //it's not the first in the array
+  //execute word flip
+  if(noticed){
+    
+    //define new pair set
+    //define set position
+    newPair      = cleanData[i]+'\r\n'+cleanData[i-1];
+    movePosition = i - 1;
+    
+    //remove old pair
+    //add new pair
+    cleanData.splice(i-1,2);
+    cleanData.splice(movePosition,0,newPair);
+    
+    //add up found string position
+    //add up found strings count 
+    //if less-than postion base
+    if(i < base && len == 2){
+      addBase += i;
+      addCount++;
+    } else {
+      likely--;
+    }
+    
+    addReal = addBase / addCount;
+  }
+}
+*/
