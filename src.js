@@ -10,9 +10,9 @@ const alphaConst = 'bcdfghjklmnpqrstvwxz'.split('');
 const alphaVowel = 'aeiouy'.split('');
 
 //read and write files
-const dataFile          = 'data.txt', 
-      dataHistory       = 'history.txt',
-      englishWordsFile  = 'words.txt',
+const fileData          = 'data.txt', 
+      fileHistory       = 'history.txt',
+      fileEnglishWords  = 'words.txt',
       
       //testing purposes--
       //create an empty .txt file named 'testWords' 
@@ -25,65 +25,55 @@ const dataFile          = 'data.txt',
       //    [etc]...
       //
       //ONE word per line only (current version | v1.0.0)
-      testWordsFile = 'testWords.txt';
+      fileTestWords = 'testWords.txt';
 
-//read wordsFile or testWordsFile and convert to array   
-var readWords = wordlistToArray(fs.readFileSync(testWordsFile,'utf8'));
+//read wordsFile or fileTestWords and convert to array   
+var wordsArray = wordlistToArray(fs.readFileSync(fileTestWords,'utf8'));
 
 //read current data.txt, history.txt files
-var data = fs.readFileSync(dataFile, 'utf8');
-var history = fs.readFileSync(dataHistory, 'utf8');
+var data    = fs.readFileSync(fileData, 'utf8');
+var history = fs.readFileSync(fileHistory, 'utf8');
 
 //clean data.txt file stream of seperators
-var cleanData = data.replace(/\r\n/g,'\n').split('\n');
+var dataArray = data.replace(/\r\n/g,'\n').split('\n');
+var dataNew   = dataArray;
 
-//assume <language>
-var call   = true,
-    likely = 100,
-    
-    //decision base factors
-    rBase = data.length * 0.05,
-    sBase = data.length * 0.03; 
+//check that altered data stream is not corrupted
+var streamSynced = dataNew.length === dataArray.length;
+
+var base = dataArray.length * 0.3;
 
 var build   = new Object();
 var trail   = new Object();
 var section = new Object();
 
-function alterData(here){
-  cleanData.splice(here - 1, 2);
-  cleanData.splice(here, 0, cleanData[here] + '\r\n' + cleanData[here - 1]);
-  return cleanData;
+function wordSwap(i){
+  var tmp = dataNew[i] + '\r\n' + dataNew[i - 1];
+  if(streamSynced){
+    dataNew.splice(i - 1, 2, tmp);
+    return dataNew;
+  } else {
+    throw new errorMsg("file sizes do not match");
+  }
 }
 
-var isIt = function(score){
-  return score > sBase;
-}
-
-readWords.map(function(t,i){
+wordsArray.map(function(t,i){
   var word       = t.replace('.', '');
-  var findPeriod = word.lastIndexOf('.') > 0;
   
   //WORD
   build.word  = word;
   
   //DNA
-  build.dna = cleanData.filter(function(str,piece){
-    return build.word.includes(str) && i < rBase;
-  },cleanData);
-  
-  //STAGE ONE
-  //use these for stage one checks
-  var isLength = build.word.length > 2;
-  var isEqual  = build.dna.indexOf(word) > 0;
-      //build falsy object
-      build.stageOne = isEqual && isLength;
+  build.dna = dataNew.filter(function(str,piece){
+    return build.word.includes(str) && i < base;
+  },dataNew);
   
   //SCORE
   build.score = build.dna.map(function(str){
-    return cleanData.indexOf(str);
+    return dataNew.indexOf(str);
   });
   
-  //SCORE 
+  //SCORE-AVERAGE 
   if(build.score.length > 0){
     build.scoreAverage = addArray(build.score) / build.score.length;
   } else {
@@ -100,6 +90,8 @@ readWords.map(function(t,i){
     return build.dna.toString().includes(str);
   });
   
+  //GATHER
+  //
   //evaluate trail of words and split into sections
   //to be used in follow section seperator
   if(trail.gather == undefined){
@@ -110,23 +102,27 @@ readWords.map(function(t,i){
   
   //section seperator
   //seperates according to punctuation
-  if(findPeriod || readWords.length === i+1){
+  //variables check for period / end of sentence(statement)
+  var findPeriod   = t.lastIndexOf('.') > 0;
+  var endStatement = wordsArray.length - 1 === i;
+  if(findPeriod || endStatement){
     if(section.evaluate == undefined){
       section.evaluate = trail.gather;
     } else {
       section.evaluate = section.evaluate.concat('\r\n' + trail.gather);
     }
     
+    trail.history += trail.gather
     //clear section gathering
     //for next sentence
     delete trail.gather;
   }
   
-  build.recognized = build.scoreAverage < sBase;
-  
-  cleanData.map(function(str){
+  //alter dataNew array
+  //to overwrite data.txt
+  dataNew.map(function(str){
     if(build.word.includes(str)){
-      alterData(cleanData.indexOf(str));
+      wordSwap(dataNew.indexOf(str));
     }
   })
     
@@ -135,7 +131,6 @@ readWords.map(function(t,i){
 });
 
 //
-//STRICT --- DO NOT EDIT OR REMOVE
 //clear stack before moving on to next cycle
 //
   //
@@ -143,24 +138,27 @@ readWords.map(function(t,i){
   //                  history.txt
   
 process.nextTick(function(){
-  fs.writeFileSync(dataFile, cleanData.join('\n'),'utf8');
-  fs.writeFileSync(dataHistory, section.evaluate + '\r\n' + history,'utf8');
   
+  if(streamSynced){
+    fs.writeFileSync(fileData, dataNew.join('\n'),'utf8');
+    fs.writeFileSync(fileHistory, section.evaluate + '\r\n' + history,'utf8');
+  } else {
+    throw new errorMsg("data stream does not match - check wordSwap() function incomplete");
+  }
   delete section.evaluate
 });
+
 //
-//END STRICT
 //
 
 //helper functions
 function removeVowelArr(str){;
   return str.split('').filter(function(l){
-    return alphaVowel.indexOf(l) > -1;
+    return alphaVowel.indexOf(l) > - 1;
   });
 }
 
 function wordlistToArray(data){
-  
   //trim whitespace line-by-line
   data = data.split('\n').map(function(line){
     return line.trim();
@@ -173,6 +171,7 @@ function wordlistToArray(data){
   return data.toLowerCase().toString().split('\n');
 }
 
+//returns combined values of all numbers in array
 function addArray(arr){
   var t = 0;
   arr.map(function(n){
@@ -181,48 +180,10 @@ function addArray(arr){
   return t;
 }
 
-
-//loop data.txt stream
-/*
-for(var i in dna){
-  
-  //basic variables for searching
-  var len = cleanData[i].length;
-  
-  //look for last word or other funky stuff
-  var check    = words[count] !== undefined;
-  var noticed  = check ? words[count].indexOf(cleanData[i]) > -1 : false;
-  
-  //define new pair and position parameter
-  var newPair, movePosition;
-  
-  //only if we find a match
-  //AND
-  //it's not the first in the array
-  //execute word flip
-  if(noticed){
-    
-    //define new pair set
-    //define set position
-    newPair      = cleanData[i]+'\r\n'+cleanData[i-1];
-    movePosition = i - 1;
-    
-    //remove old pair
-    //add new pair
-    cleanData.splice(i-1,2);
-    cleanData.splice(movePosition,0,newPair);
-    
-    //add up found string position
-    //add up found strings count 
-    //if less-than postion base
-    if(i < base && len == 2){
-      addBase += i;
-      addCount++;
-    } else {
-      likely--;
-    }
-    
-    addReal = addBase / addCount;
-  }
+function errorMsg(message) {
+    this.constructor.prototype.__proto__ = Error.prototype;
+    // capture stack trace 
+    Error.captureStackTrace(this, this.constructor);
+    this.name = this.constructor.name;
+    this.message = message;
 }
-*/
