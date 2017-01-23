@@ -4,6 +4,8 @@
 //    Email: isaactdozier@gmail.com
 //
 
+const dataSizeMatchMsg = "Data file Size Issue (data stream does not match/sync, check that both dataNew and dataArray are working streams of data.txt file)"
+
 const fs  = require('fs');
 
 const alphaConst = 'bcdfghjklmnpqrstvwxz'.split('');
@@ -11,20 +13,13 @@ const alphaVowel = 'aeiouy'.split('');
 
 //read and write files
 const fileData          = 'data.txt', 
+      fileRecentWords   = 'recentWords.txt',
+      fileSection       = 'section.txt',
       fileHistory       = 'history.txt',
       fileEnglishWords  = 'words.txt',
       
       //testing purposes--
-      //create an empty .txt file named 'testWords' 
-      //make a list of words you would like to test.
-      //
-      //  example:
-      //    house
-      //    furnace
-      //    bounce
-      //    [etc]...
-      //
-      //ONE word per line only (current version | v1.0.0)
+      //Beta testing paragraphs (current version | v1.0.1)
       fileTestWords = 'testWords.txt';
 
 //read wordsFile or fileTestWords and convert to array   
@@ -37,31 +32,76 @@ var history = fs.readFileSync(fileHistory, 'utf8');
 //clean data.txt file stream of seperators
 var dataArray = data.replace(/\r\n/g,'\n').split('\n');
 var dataNew   = dataArray;
+var dataSection;
+var dataTrail;
 
 //check that altered data stream is not corrupted
-var streamSynced = dataNew.length === dataArray.length;
+var streamSynced = streamCheck(dataNew, dataArray);
 
 var base = dataArray.length * 0.3;
 
 var build   = new Object();
-var trail   = new Object();
-var section = new Object();
+
+function streamCheck(a,b){
+  //basic size match before deep check
+  var equalDataSize = a.length === b.length;
+  var partIdentify;
+  var fullIdentify;
+  var checkCleanTail;
+  var hickup;
+  if(equalDataSize){
+    for(var i=0;i<a.length;i++){
+      var equalStrSet    = a[i] === b[i];
+      var equalStrOffset = a[i] === b[i+1] || b[i] === a[i+1];
+      if(equalStrOffset && !partIdentify){
+        partIdentify = true;
+      } else if(equalStrOffset && partIdentify){
+        fullIdentify = true;
+      } else if(fullIdentify && !equalStrSet){
+        hickup = false;
+      } else if(!hickup){
+        return true;
+      }
+    }
+  } else {
+    //throws error before deep stream sync check
+    throw new errorMsg(dataSizeMatchMsg)
+  }
+};
 
 function wordSwap(i){
-  var tmp = dataNew[i] + '\r\n' + dataNew[i - 1];
+  const mark = '-';
+    var a    = dataNew[i]
+    var b    = dataNew[i - 1];
+  //check if str set is first in array
+  //if so, dont do anything
+  var moveable = i !== 0;
   if(streamSynced){
-    dataNew.splice(i - 1, 2, tmp);
-    return dataNew;
+    if(moveable){
+      if(a.indexOf(mark) > -1){
+        a.replace(mark, '');
+      }            
+      return dataNew.splice(i - 1, 2, a + '\r\n' + b);
+    }
   } else {
-    throw new errorMsg("file sizes do not match");
+    throw new errorMsg(dataSizeMatchMsg);
   }
 }
 
+function recognitionCheckBasic(str){
+  return 'test';
+}
+
+//main functionality
 wordsArray.map(function(t,i){
-  var word       = t.replace('.', '');
+  var ref   = '"(){}[]'.concat("'").split('');
+  var word  = scrubRef(t,ref);
   
   //WORD
   build.word  = word;
+  
+  //REC
+  build.rec   = recognitionCheckBasic(word);
   
   //DNA
   build.dna = dataNew.filter(function(str,piece){
@@ -75,9 +115,9 @@ wordsArray.map(function(t,i){
   
   //SCORE-AVERAGE 
   if(build.score.length > 0){
-    build.scoreAverage = addArray(build.score) / build.score.length;
+    build.scoreAvg = arrayTotalValue(build.score) / build.score.length;
   } else {
-    build.scoreAverage = Array();
+    build.scoreAvg = Array();
   }
   
   //CONST
@@ -92,42 +132,45 @@ wordsArray.map(function(t,i){
   
   //GATHER
   //
-  //evaluate trail of words and split into sections
-  //to be used in follow section seperator
-  if(trail.gather == undefined){
-    trail.gather = build.word;
+
+  if(dataTrail == undefined){
+    dataTrail = build.word;
   } else {
-    trail.gather = trail.gather.concat(' ' + t);
+    dataTrail = dataTrail.concat(' ' + t);
   }
   
   //section seperator
   //seperates according to punctuation
-  //variables check for period / end of sentence(statement)
-  var findPeriod   = t.lastIndexOf('.') > 0;
-  var endStatement = wordsArray.length - 1 === i;
-  if(findPeriod || endStatement){
-    if(section.evaluate == undefined){
-      section.evaluate = trail.gather;
+  var endStatement = wordsArray.length === i;
+  if(endStatement){
+    if(dataSection == undefined){
+      dataSection = dataTrail;
     } else {
-      section.evaluate = section.evaluate.concat('\r\n' + trail.gather);
+      dataSection = dataSection.concat('\r\n' + dataTrail);
     }
     
-    trail.history += trail.gather
+    //write to save files
+    //short term memory save
+    writeFile(fileSection, dataTrail.split(' ').join('\n'));
+    //history save
+    writeFile(fileHistory, dataSection + '\r\n' + history);
+    
     //clear section gathering
     //for next sentence
-    delete trail.gather;
+    dataTrail = null;
   }
-  
+  //
   //alter dataNew array
   //to overwrite data.txt
   dataNew.map(function(str){
     if(build.word.includes(str)){
       wordSwap(dataNew.indexOf(str));
+      writeFile(fileData,    dataNew.join('\n'));
     }
   })
     
   //for the humans
-  console.log(build);
+  console.log(build.word + '-' + build.scoreAvg + '-' + build.rec);
 });
 
 //
@@ -136,26 +179,27 @@ wordsArray.map(function(t,i){
   //
   //write changes to: data.txt
   //                  history.txt
-  
-process.nextTick(function(){
-  
+function writeFile(file,data){
+  process.nextTick(function(){
   if(streamSynced){
-    fs.writeFileSync(fileData, dataNew.join('\n'),'utf8');
-    fs.writeFileSync(fileHistory, section.evaluate + '\r\n' + history,'utf8');
-  } else {
-    throw new errorMsg("data stream does not match - check wordSwap() function incomplete");
+    fs.writeFileSync(file,data,'utf8');
   }
-  delete section.evaluate
 });
-
-//
-//
+}
 
 //helper functions
 function removeVowelArr(str){;
   return str.split('').filter(function(l){
     return alphaVowel.indexOf(l) > - 1;
   });
+}
+
+function scrubRef(word,refArray){
+  var tmp = word;
+  refArray.map(function(p){
+    tmp = tmp.replace(p, '')
+  });
+  return tmp;
 }
 
 function wordlistToArray(data){
@@ -172,7 +216,7 @@ function wordlistToArray(data){
 }
 
 //returns combined values of all numbers in array
-function addArray(arr){
+function arrayTotalValue(arr){
   var t = 0;
   arr.map(function(n){
     t += n;
@@ -180,6 +224,7 @@ function addArray(arr){
   return t;
 }
 
+//basic error message handling
 function errorMsg(message) {
     this.constructor.prototype.__proto__ = Error.prototype;
     // capture stack trace 
